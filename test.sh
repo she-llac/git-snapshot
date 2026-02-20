@@ -380,7 +380,7 @@ echo -e "${BOLD}Test 29: temp file cleanup${RESET}"
 leak_tmpdir=$(mktemp -d)
 cleanup_repo=$(mktemp -d)
 git -C "$cleanup_repo" init -q
-(cd "$cleanup_repo" && TMPDIR="$leak_tmpdir" "$SNAPSHOT" 2>&1) || true
+(cd "$cleanup_repo" && TMPDIR="$leak_tmpdir" "$SNAPSHOT" >/dev/null 2>&1) || true
 leaked=$(find "$leak_tmpdir" -maxdepth 1 -type f | wc -l | tr -d ' ')
 assert_eq "no temp files leaked" "0" "$leaked"
 rm -rf "$cleanup_repo" "$leak_tmpdir"
@@ -537,7 +537,7 @@ echo
 
 # === Test 41: restore untracked file from snapshot ===
 echo -e "${BOLD}Test 41: restore untracked file from snapshot${RESET}"
-git add -A && git commit -q -m "checkpoint 12"
+{ git add -A && git commit -q -m "checkpoint 12"; } >/dev/null 2>&1 || true
 echo "untracked snap" > untracked-restore.txt
 "$SNAPSHOT" -m "has untracked" >/dev/null
 rm untracked-restore.txt
@@ -794,7 +794,7 @@ echo "branch1" > "$merge_repo/conflict.txt"
 (cd "$merge_repo" && git checkout -q main)
 echo "main change" > "$merge_repo/conflict.txt"
 (cd "$merge_repo" && git commit -q -am "main change")
-(cd "$merge_repo" && git merge branch1 2>/dev/null) || true
+(cd "$merge_repo" && git merge branch1 >/dev/null 2>&1) || true
 merge_sha=$(cd "$merge_repo" && "$SNAPSHOT" -m "during merge")
 merge_status=$?
 assert_eq "snapshot during merge exits zero" "0" "$merge_status"
