@@ -680,6 +680,158 @@ else
 fi
 echo
 
+# === Test 51: show with -- path limiting ===
+echo -e "${BOLD}Test 51: show with -- path limiting${RESET}"
+git add -A && git commit -q -m "checkpoint 15"
+echo "pathA" > path-a.txt
+echo "pathB" > path-b.txt
+"$SNAPSHOT" -m "for path limiting" >/dev/null
+show_path_output=$("$SNAPSHOT" show 0 -- path-a.txt)
+assert_contains "show -- path has target file" "path-a.txt" "$show_path_output"
+if echo "$show_path_output" | grep -q "path-b.txt"; then
+    echo -e "  ${RED}✗${RESET} show -- path excludes other files" >&2
+    ((fail++))
+else
+    echo -e "  ${GREEN}✓${RESET} show -- path excludes other files" >&2
+    ((pass++))
+fi
+echo
+
+# === Test 52: show with flags and -- path limiting ===
+echo -e "${BOLD}Test 52: show with flags and -- path limiting${RESET}"
+show_path_p=$("$SNAPSHOT" show 0 -p -- path-a.txt)
+assert_contains "show -p -- path has diff content" "+pathA" "$show_path_p"
+if echo "$show_path_p" | grep -q "+pathB"; then
+    echo -e "  ${RED}✗${RESET} show -p -- path excludes other files" >&2
+    ((fail++))
+else
+    echo -e "  ${GREEN}✓${RESET} show -p -- path excludes other files" >&2
+    ((pass++))
+fi
+echo
+
+# === Test 53: --message=value form ===
+echo -e "${BOLD}Test 53: --message=value form${RESET}"
+sha=$("$SNAPSHOT" --message="equals form")
+msg53=$(git log -1 --format='%s' "$sha")
+assert_eq "--message=value sets message" "equals form" "$msg53"
+# --message= (empty) should fail
+msg_empty_output=$("$SNAPSHOT" --message= 2>&1)
+msg_empty_status=$?
+assert_eq "--message= (empty) exits non-zero" "1" "$msg_empty_status"
+assert_contains "--message= (empty) prints error" "--message requires a value" "$msg_empty_output"
+# --message=value with -i
+sha53b=$("$SNAPSHOT" --message="equals with ignored" -i)
+msg53b=$(git log -1 --format='%s' "$sha53b")
+assert_eq "--message=value with -i: message correct" "equals with ignored" "$msg53b"
+echo
+
+# === Test 54: restore full tree removes files not in snapshot ===
+echo -e "${BOLD}Test 54: restore full tree removes post-snapshot files${RESET}"
+restore_repo=$(mktemp -d)
+git -C "$restore_repo" init -q
+git -C "$restore_repo" commit --allow-empty -m "root" -q
+echo "original" > "$restore_repo/original.txt"
+(cd "$restore_repo" && git add -A && git commit -q -m "add original")
+(cd "$restore_repo" && "$SNAPSHOT" -m "before new file" >/dev/null)
+echo "new committed" > "$restore_repo/new-committed.txt"
+(cd "$restore_repo" && git add -A && git commit -q -m "add new-committed")
+(cd "$restore_repo" && "$SNAPSHOT" restore 0)
+assert_eq "committed file not in snapshot is removed" "NO" "$(test -f "$restore_repo/new-committed.txt" && echo YES || echo NO)"
+assert_eq "original file still present" "original" "$(cat "$restore_repo/original.txt")"
+rm -rf "$restore_repo"
+echo
+
+# === Test 55: restore full tree preserves untracked files not in snapshot ===
+echo -e "${BOLD}Test 55: restore full tree preserves untracked files${RESET}"
+restore_repo2=$(mktemp -d)
+git -C "$restore_repo2" init -q
+git -C "$restore_repo2" commit --allow-empty -m "root" -q
+echo "tracked" > "$restore_repo2/tracked.txt"
+(cd "$restore_repo2" && git add -A && git commit -q -m "add tracked")
+(cd "$restore_repo2" && "$SNAPSHOT" -m "before untracked" >/dev/null)
+echo "new untracked" > "$restore_repo2/untracked-new.txt"
+(cd "$restore_repo2" && "$SNAPSHOT" restore 0)
+assert_eq "untracked file not in snapshot is preserved" "new untracked" "$(cat "$restore_repo2/untracked-new.txt")"
+rm -rf "$restore_repo2"
+echo
+
+# === Test 56: drop with non-numeric argument ===
+echo -e "${BOLD}Test 56: drop with non-numeric argument${RESET}"
+drop_nonnumeric_output=$("$SNAPSHOT" drop abc 2>&1)
+drop_nonnumeric_status=$?
+assert_eq "drop abc exits non-zero" "1" "$drop_nonnumeric_status"
+assert_contains "drop abc prints error" "snapshot @{abc} not found" "$drop_nonnumeric_output"
+echo
+
+# === Test 57: drop with reflog date string ===
+echo -e "${BOLD}Test 57: drop with reflog date string${RESET}"
+drop_date_repo=$(mktemp -d)
+git -C "$drop_date_repo" init -q
+git -C "$drop_date_repo" commit --allow-empty -m "root" -q
+(cd "$drop_date_repo" && "$SNAPSHOT" -m "first" >/dev/null)
+sleep 1
+(cd "$drop_date_repo" && "$SNAPSHOT" -m "second" >/dev/null)
+# "0.seconds.ago" resolves to the oldest entry at/before now, which is "first" — not "second"
+(cd "$drop_date_repo" && "$SNAPSHOT" drop "0.seconds.ago") 2>/dev/null
+remaining=$(cd "$drop_date_repo" && git reflog show refs/snapshots --format='%gs' 2>/dev/null)
+assert_contains "date-based drop: 'second' survives" "second" "$remaining"
+# The entry that got dropped depends on git's date resolution — just verify one was removed
+remaining_count=$(cd "$drop_date_repo" && git reflog show refs/snapshots --no-decorate 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "date-based drop: one entry removed" "1" "$remaining_count"
+rm -rf "$drop_date_repo"
+echo
+
+# === Test 58: snapshot during merge conflict ===
+echo -e "${BOLD}Test 58: snapshot during merge conflict${RESET}"
+merge_repo=$(mktemp -d)
+git -C "$merge_repo" init -q
+echo "base" > "$merge_repo/conflict.txt"
+(cd "$merge_repo" && git add -A && git commit -q -m "base")
+(cd "$merge_repo" && git checkout -q -b branch1)
+echo "branch1" > "$merge_repo/conflict.txt"
+(cd "$merge_repo" && git commit -q -am "b1")
+(cd "$merge_repo" && git checkout -q main)
+echo "main change" > "$merge_repo/conflict.txt"
+(cd "$merge_repo" && git commit -q -am "main change")
+(cd "$merge_repo" && git merge branch1 2>/dev/null) || true
+merge_sha=$(cd "$merge_repo" && "$SNAPSHOT" -m "during merge")
+merge_status=$?
+assert_eq "snapshot during merge exits zero" "0" "$merge_status"
+merge_content=$(git -C "$merge_repo" show "$merge_sha:conflict.txt")
+assert_contains "snapshot captures conflict markers" "<<<<<<<" "$merge_content"
+rm -rf "$merge_repo"
+echo
+
+# === Test 59: git mv rename ===
+echo -e "${BOLD}Test 59: git mv rename${RESET}"
+git add -A && git commit -q -m "checkpoint 16"
+echo "rename content" > before-rename.txt
+git add before-rename.txt && git commit -q -m "add before-rename"
+git mv before-rename.txt after-rename.txt
+sha=$(snapshot_and_verify "rename")
+rename_old=$(git ls-tree --name-only "$sha" -- before-rename.txt 2>/dev/null || echo "")
+rename_new=$(git ls-tree --name-only "$sha" -- after-rename.txt)
+assert_eq "old name absent from snapshot" "" "$rename_old"
+assert_eq "new name present in snapshot" "after-rename.txt" "$rename_new"
+assert_eq "snapshot has renamed content" "rename content" "$(git show "$sha:after-rename.txt")"
+assert_eq "rename still staged" "R100	before-rename.txt	after-rename.txt" "$(git diff --cached --name-status -- before-rename.txt after-rename.txt)"
+echo
+
+# === Test 60: permission changes captured ===
+echo -e "${BOLD}Test 60: permission changes captured${RESET}"
+git add -A && git commit -q -m "checkpoint 17"
+echo "mode test" > modefile.sh
+git add modefile.sh && git commit -q -m "add modefile"
+mode_before=$(git ls-tree HEAD -- modefile.sh | awk '{print $1}')
+chmod +x modefile.sh
+sha=$(snapshot_and_verify "permissions")
+mode_snap=$(git ls-tree "$sha" -- modefile.sh | awk '{print $1}')
+mode_head=$(git ls-tree HEAD -- modefile.sh | awk '{print $1}')
+assert_eq "HEAD still has old mode" "$mode_before" "$mode_head"
+assert_eq "snapshot has executable mode" "100755" "$mode_snap"
+echo
+
 # --- results ---
 echo -e "${BOLD}Results: ${GREEN}$pass passed${RESET}, ${RED}$fail failed${RESET}"
 rm -rf "$dir"
