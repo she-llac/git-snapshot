@@ -116,6 +116,9 @@ subcommands.
 - Snapshots expire with `git gc` according to your reflog expiry settings
   (default: 90 days for unreachable entries)
 - Only works inside a Git repository with at least one commit
+- Snapshots are stored in `refs/snapshots`, which is shared across linked
+  worktrees. Use the snapshot message or `git snapshot list` to identify
+  which worktree a snapshot came from
 
 ## Testing
 
