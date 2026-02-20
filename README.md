@@ -37,9 +37,10 @@ git snapshot list
 ### Show what's in a snapshot
 
 ```sh
-git snapshot show       # stat summary, latest snapshot vs HEAD
-git snapshot show 2     # stat summary, snapshots@{2} vs HEAD
-git snapshot show 0 -p  # full patch
+git snapshot show             # stat summary, latest snapshot vs HEAD
+git snapshot show 2           # stat summary, snapshots@{2} vs HEAD
+git snapshot show 0 -p        # full patch
+git snapshot show 0 -- path   # limit to specific paths
 ```
 
 ### List files in a snapshot
@@ -63,6 +64,11 @@ git show refs/snapshots@{0}:path/to/file
 git snapshot restore 0                    # restore everything
 git snapshot restore 2 path/to/file.txt   # restore specific files
 ```
+
+> **Note:** A full restore (`restore N` with no paths) replaces the worktree
+> with the snapshot's tree exactly. Tracked files that don't exist in the
+> snapshot will be removed from the worktree (untracked files are left alone).
+> Your committed history is never affected.
 
 ### Drop a snapshot
 
