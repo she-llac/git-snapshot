@@ -119,7 +119,7 @@ subcommands.
 
 ## Testing
 
-60 tests (133 assertions) covering snapshots, restore, edge cases, and error handling:
+64 tests (143 assertions) covering snapshots, restore, edge cases, and error handling:
 
 ```sh
 bash test.sh

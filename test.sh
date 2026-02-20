@@ -832,6 +832,75 @@ assert_eq "HEAD still has old mode" "$mode_before" "$mode_head"
 assert_eq "snapshot has executable mode" "100755" "$mode_snap"
 echo
 
+# === Test 61: full restore recovers previously-untracked files ===
+echo -e "${BOLD}Test 61: full restore recovers previously-untracked files${RESET}"
+restore_untracked_repo=$(mktemp -d)
+git -C "$restore_untracked_repo" init -q
+git -C "$restore_untracked_repo" commit --allow-empty -m "root" -q
+echo "tracked" > "$restore_untracked_repo/tracked.txt"
+(cd "$restore_untracked_repo" && git add -A && git commit -q -m "add tracked")
+echo "bonus1" > "$restore_untracked_repo/bonus1.txt"
+echo "bonus2" > "$restore_untracked_repo/bonus2.txt"
+(cd "$restore_untracked_repo" && "$SNAPSHOT" -m "has untracked" >/dev/null)
+rm "$restore_untracked_repo/bonus1.txt" "$restore_untracked_repo/bonus2.txt"
+(cd "$restore_untracked_repo" && "$SNAPSHOT" restore 0)
+assert_eq "untracked bonus1 restored by full restore" "bonus1" "$(cat "$restore_untracked_repo/bonus1.txt")"
+assert_eq "untracked bonus2 restored by full restore" "bonus2" "$(cat "$restore_untracked_repo/bonus2.txt")"
+assert_eq "tracked file still present" "tracked" "$(cat "$restore_untracked_repo/tracked.txt")"
+rm -rf "$restore_untracked_repo"
+echo
+
+# === Test 62: full restore with staged-but-uncommitted file ===
+echo -e "${BOLD}Test 62: full restore with staged-but-uncommitted file${RESET}"
+staged_restore_repo=$(mktemp -d)
+git -C "$staged_restore_repo" init -q
+git -C "$staged_restore_repo" commit --allow-empty -m "root" -q
+echo "orig" > "$staged_restore_repo/orig.txt"
+(cd "$staged_restore_repo" && git add orig.txt && git commit -q -m "add orig")
+(cd "$staged_restore_repo" && "$SNAPSHOT" -m "before staging" >/dev/null)
+echo "staged-new" > "$staged_restore_repo/staged-new.txt"
+(cd "$staged_restore_repo" && git add staged-new.txt)
+(cd "$staged_restore_repo" && "$SNAPSHOT" restore 0)
+assert_eq "staged file removed from worktree" "NO" "$(test -f "$staged_restore_repo/staged-new.txt" && echo YES || echo NO)"
+staged_status=$(cd "$staged_restore_repo" && git diff --cached --name-status -- staged-new.txt)
+assert_eq "staged file remains in index" "A	staged-new.txt" "$staged_status"
+echo
+
+# === Test 63: file-to-directory type change ===
+echo -e "${BOLD}Test 63: file-to-directory type change${RESET}"
+git add -A && git commit -q -m "checkpoint 18"
+echo "I am a file" > thing
+git add thing && git commit -q -m "thing as file"
+sha_file=$(snapshot_and_verify "thing as file")
+assert_eq "snapshot has thing as file" "100644" "$(git ls-tree "$sha_file" -- thing | awk '{print $1}')"
+rm thing
+mkdir thing
+echo "inside dir" > thing/inner.txt
+sha_dir=$(snapshot_and_verify "thing as dir")
+assert_eq "snapshot has thing as dir" "040000" "$(git ls-tree "$sha_dir" -- thing | awk '{print $1}')"
+assert_eq "snapshot has inner file" "inside dir" "$(git show "$sha_dir:thing/inner.txt")"
+echo
+
+# === Test 64: restore single file from subdirectory with relative path ===
+echo -e "${BOLD}Test 64: restore from subdirectory with relative path${RESET}"
+git add -A && git commit -q -m "checkpoint 19"
+mkdir -p relpath-sub
+echo "root content" > relpath-root.txt
+echo "sub content" > relpath-sub/child.txt
+git add -A && git commit -q -m "add relpath files"
+echo "root modified" > relpath-root.txt
+echo "sub modified" > relpath-sub/child.txt
+"$SNAPSHOT" -m "relpath snap" >/dev/null
+echo "root destroyed" > relpath-root.txt
+echo "sub destroyed" > relpath-sub/child.txt
+cd relpath-sub
+"$SNAPSHOT" restore 0 child.txt
+assert_eq "child restored via relative path" "sub modified" "$(cat child.txt)"
+"$SNAPSHOT" restore 0 ../relpath-root.txt
+assert_eq "root restored via ../ path" "root modified" "$(cat ../relpath-root.txt)"
+cd "$dir"
+echo
+
 # --- results ---
 echo -e "${BOLD}Results: ${GREEN}$pass passed${RESET}, ${RED}$fail failed${RESET}"
 rm -rf "$dir"
