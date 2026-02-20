@@ -117,6 +117,14 @@ subcommands.
   (default: 90 days for unreachable entries)
 - Only works inside a Git repository with at least one commit
 
+## Testing
+
+60 tests (133 assertions) covering snapshots, restore, edge cases, and error handling:
+
+```sh
+bash test.sh
+```
+
 ## See also
 
 - [temptree](https://github.com/she-llac/temptree) - disposable Git

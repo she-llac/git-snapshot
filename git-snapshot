@@ -3,12 +3,12 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: git snapshot [options]              Take a snapshot
-       git snapshot list                   List snapshots
-       git snapshot show [N]               Diff snapshot N against HEAD (default: 0)
-       git snapshot files [N]              List files in snapshot N
-       git snapshot restore N [path...]    Restore files from snapshot N into worktree
-       git snapshot drop N                 Remove snapshot N
+Usage: git snapshot [options]               Take a snapshot
+       git snapshot list                    List snapshots
+       git snapshot show [N] [diff-opts]    Diff snapshot N against HEAD (default: 0)
+       git snapshot files [N]               List files in snapshot N
+       git snapshot restore N [path...]     Restore files from snapshot N into worktree
+       git snapshot drop N                  Remove snapshot N
 
 Snapshots capture the full working tree (tracked + untracked) as a commit
 object, without touching the index or working tree. They're stored in the
