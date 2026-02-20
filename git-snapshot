@@ -140,11 +140,14 @@ cmd_restore() {
 
 # --- main ---
 
+# Help works anywhere, even outside a git repo
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+
 # Guard: must be inside a git working tree
 [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || die "not a git repository (or not inside a work tree)"
 
 case "${1:-}" in
-  ""|-m|--message|--message=*|-i|--ignored|-h|--help|--)
+  ""|-m|--message|--message=*|-i|--ignored|--)
     cmd_snapshot "$@" ;;
   list|show|files|restore|drop)
     cmd="$1"; shift

@@ -901,6 +901,32 @@ assert_eq "root restored via ../ path" "root modified" "$(cat ../relpath-root.tx
 cd "$dir"
 echo
 
+# === Test 65: -- ends option parsing ===
+echo -e "${BOLD}Test 65: -- ends option parsing${RESET}"
+sha=$("$SNAPSHOT" -m "with separator" -i --)
+sep_status=$?
+assert_eq "-- exits zero" "0" "$sep_status"
+sep_msg=$(git log -1 --format='%s' "$sha")
+assert_eq "-- preserves message" "with separator" "$sep_msg"
+sha2=$("$SNAPSHOT" --)
+sep2_status=$?
+assert_eq "bare -- exits zero" "0" "$sep2_status"
+echo
+
+# === Test 66: --help works outside a git repo ===
+echo -e "${BOLD}Test 66: --help outside git repo${RESET}"
+nogit_help_dir=$(mktemp -d)
+nogit_help_output=$(cd "$nogit_help_dir" && "$SNAPSHOT" --help)
+nogit_help_status=$?
+assert_eq "--help outside repo exits zero" "0" "$nogit_help_status"
+assert_contains "--help outside repo shows usage" "Usage: git snapshot" "$nogit_help_output"
+nogit_h_output=$(cd "$nogit_help_dir" && "$SNAPSHOT" -h)
+nogit_h_status=$?
+assert_eq "-h outside repo exits zero" "0" "$nogit_h_status"
+assert_contains "-h outside repo shows usage" "Usage: git snapshot" "$nogit_h_output"
+rm -rf "$nogit_help_dir"
+echo
+
 # --- results ---
 echo -e "${BOLD}Results: ${GREEN}$pass passed${RESET}, ${RED}$fail failed${RESET}"
 rm -rf "$dir"
