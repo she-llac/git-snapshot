@@ -60,21 +60,22 @@ cmd_snapshot() {
   # Guard: index must exist
   [[ -f "$git_dir/index" ]] || die "no index found; make an initial commit first"
 
-  local tmp
-  tmp=$(mktemp)
-  trap 'rm -f "$tmp" 2>/dev/null' EXIT
+  # NB: tmp must NOT be local — the EXIT trap fires after the function scope
+  # ends (on set -e failure), so a local would be unbound and leak the file.
+  _snapshot_tmp=$(mktemp)
+  trap 'rm -f "$_snapshot_tmp" 2>/dev/null' EXIT
 
-  cp "$git_dir/index" "$tmp"
+  cp "$git_dir/index" "$_snapshot_tmp" || die "failed to copy index"
 
   if [[ "$include_ignored" == true ]]; then
-    GIT_INDEX_FILE="$tmp" git add -A --force
+    GIT_INDEX_FILE="$_snapshot_tmp" git add -A --force
   else
-    GIT_INDEX_FILE="$tmp" git add -A
+    GIT_INDEX_FILE="$_snapshot_tmp" git add -A
   fi
 
   local tree commit
-  tree=$(GIT_INDEX_FILE="$tmp" git write-tree)
-  rm -f "$tmp"
+  tree=$(GIT_INDEX_FILE="$_snapshot_tmp" git write-tree)
+  rm -f "$_snapshot_tmp"
   trap - EXIT
 
   commit=$(git commit-tree "$tree" -p HEAD -m "$message")
@@ -83,14 +84,28 @@ cmd_snapshot() {
 }
 
 cmd_list() {
-  git reflog show refs/snapshots --format='%C(auto)%h %C(green)%gd%C(reset) %gs  %C(dim)%ci%C(reset)' 2>/dev/null || echo "no snapshots"
+  local output
+  output=$(git reflog show refs/snapshots --format='%C(auto)%h %C(green)%gd%C(reset) %gs  %C(dim)%ci%C(reset)' 2>/dev/null) || true
+  if [[ -z "$output" ]]; then
+    echo "no snapshots"
+  else
+    echo "$output"
+  fi
 }
 
 cmd_show() {
-  local ref n="${1:-0}"
-  shift 2>/dev/null || true
+  local ref n=0
+  # First arg is the snapshot index only if it looks like a non-negative integer
+  if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+    n="$1"; shift
+  fi
   ref=$(resolve_snap "$n")
-  git diff --stat "$@" HEAD "$ref"
+  # Default to --stat unless the caller passes their own format flag
+  if [[ $# -eq 0 ]]; then
+    git diff --stat HEAD "$ref"
+  else
+    git diff "$@" HEAD "$ref"
+  fi
 }
 
 cmd_files() {
@@ -113,6 +128,8 @@ cmd_restore() {
   shift
 
   if [[ $# -eq 0 ]]; then
+    # Restore the full tree from the repo root, regardless of cwd
+    cd "$(git rev-parse --show-toplevel)"
     git restore --source="$ref" --worktree -- .
   else
     git restore --source="$ref" --worktree -- "$@"
@@ -120,6 +137,9 @@ cmd_restore() {
 }
 
 # --- main ---
+
+# Guard: must be inside a git working tree
+[[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || die "not a git repository (or not inside a work tree)"
 
 case "${1:-}" in
   ""|-m|--message|-i|--ignored|-h|--help)

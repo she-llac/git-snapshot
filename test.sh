@@ -468,6 +468,218 @@ else
 fi
 echo
 
+# === Test 36: show with flags but no index ===
+echo -e "${BOLD}Test 36: show with flags but no index${RESET}"
+git add -A && git commit -q -m "checkpoint 8"
+echo "flag-test" > flagtest.txt
+"$SNAPSHOT" -m "for flag test" >/dev/null
+# "show -p" should treat -p as a diff flag, not a snapshot index
+show_flag_output=$("$SNAPSHOT" show -p 2>&1)
+show_flag_status=$?
+assert_eq "show -p exits zero" "0" "$show_flag_status"
+assert_contains "show -p includes file" "flagtest.txt" "$show_flag_output"
+assert_contains "show -p includes diff content" "+flag-test" "$show_flag_output"
+# show --name-only (no index)
+show_nameonly2=$("$SNAPSHOT" show --name-only)
+assert_contains "show --name-only (no index) includes file" "flagtest.txt" "$show_nameonly2"
+echo
+
+# === Test 37: show with N > 0 ===
+echo -e "${BOLD}Test 37: show with N > 0${RESET}"
+git add -A && git commit -q -m "checkpoint 9"
+echo "older" > older.txt
+"$SNAPSHOT" -m "older snap" >/dev/null
+echo "newer" > newer.txt
+"$SNAPSHOT" -m "newer snap" >/dev/null
+show_0=$("$SNAPSHOT" show 0 --name-only)
+show_1=$("$SNAPSHOT" show 1 --name-only)
+assert_contains "show 0 has newer.txt" "newer.txt" "$show_0"
+assert_contains "show 1 has older.txt" "older.txt" "$show_1"
+echo
+
+# === Test 38: files with N > 0 ===
+echo -e "${BOLD}Test 38: files with N > 0${RESET}"
+files_0=$("$SNAPSHOT" files 0)
+files_1=$("$SNAPSHOT" files 1)
+assert_contains "files 0 has newer.txt" "newer.txt" "$files_0"
+assert_contains "files 1 has older.txt" "older.txt" "$files_1"
+echo
+
+# === Test 39: restore from subdirectory restores full tree ===
+echo -e "${BOLD}Test 39: restore from subdirectory${RESET}"
+git add -A && git commit -q -m "checkpoint 10"
+mkdir -p rsub
+echo "root content" > root-rsub.txt
+echo "sub content" > rsub/sub-rsub.txt
+git add -A && git commit -q -m "add rsub files"
+echo "root modified" > root-rsub.txt
+echo "sub modified" > rsub/sub-rsub.txt
+"$SNAPSHOT" -m "before subdir restore" >/dev/null
+echo "root destroyed" > root-rsub.txt
+echo "sub destroyed" > rsub/sub-rsub.txt
+cd rsub
+"$SNAPSHOT" restore 0
+cd "$dir"
+assert_eq "root file restored from subdir" "root modified" "$(cat root-rsub.txt)"
+assert_eq "sub file restored from subdir" "sub modified" "$(cat rsub/sub-rsub.txt)"
+echo
+
+# === Test 40: restore deleted tracked file ===
+echo -e "${BOLD}Test 40: restore deleted tracked file${RESET}"
+git add -A && git commit -q -m "checkpoint 11"
+echo "will delete" > deleteme.txt
+git add deleteme.txt && git commit -q -m "add deleteme"
+"$SNAPSHOT" -m "has deleteme" >/dev/null
+rm deleteme.txt
+"$SNAPSHOT" restore 0 deleteme.txt
+assert_eq "deleted file restored" "will delete" "$(cat deleteme.txt)"
+echo
+
+# === Test 41: restore untracked file from snapshot ===
+echo -e "${BOLD}Test 41: restore untracked file from snapshot${RESET}"
+git add -A && git commit -q -m "checkpoint 12"
+echo "untracked snap" > untracked-restore.txt
+"$SNAPSHOT" -m "has untracked" >/dev/null
+rm untracked-restore.txt
+"$SNAPSHOT" restore 0 untracked-restore.txt
+assert_eq "untracked file restored from snapshot" "untracked snap" "$(cat untracked-restore.txt)"
+echo
+
+# === Test 42: restore nonexistent path errors cleanly ===
+echo -e "${BOLD}Test 42: restore nonexistent path${RESET}"
+restore_bad_output=$("$SNAPSHOT" restore 0 no-such-file.txt 2>&1)
+restore_bad_status=$?
+assert_eq "restore nonexistent path exits non-zero" "1" "$restore_bad_status"
+assert_contains "restore nonexistent path mentions pathspec" "pathspec" "$restore_bad_output"
+echo
+
+# === Test 43: list after dropping all snapshots ===
+echo -e "${BOLD}Test 43: list after dropping all snapshots${RESET}"
+drop_repo=$(mktemp -d)
+git -C "$drop_repo" init -q
+git -C "$drop_repo" commit --allow-empty -m "root" -q
+(cd "$drop_repo" && "$SNAPSHOT" -m "only" >/dev/null)
+(cd "$drop_repo" && "$SNAPSHOT" drop 0)
+drop_list_output=$(cd "$drop_repo" && "$SNAPSHOT" list)
+assert_eq "list shows 'no snapshots' after dropping all" "no snapshots" "$drop_list_output"
+rm -rf "$drop_repo"
+echo
+
+# === Test 44: snapshot after dropping all snapshots ===
+echo -e "${BOLD}Test 44: snapshot after dropping all snapshots${RESET}"
+fresh_repo=$(mktemp -d)
+git -C "$fresh_repo" init -q
+git -C "$fresh_repo" commit --allow-empty -m "root" -q
+(cd "$fresh_repo" && "$SNAPSHOT" -m "first" >/dev/null)
+(cd "$fresh_repo" && "$SNAPSHOT" drop 0)
+fresh_sha=$(cd "$fresh_repo" && "$SNAPSHOT" -m "after drop")
+fresh_status=$?
+assert_eq "snapshot after drop exits zero" "0" "$fresh_status"
+fresh_list=$(cd "$fresh_repo" && "$SNAPSHOT" list)
+assert_contains "new snapshot appears in list after drop" "after drop" "$fresh_list"
+rm -rf "$fresh_repo"
+echo
+
+# === Test 45: detached HEAD ===
+echo -e "${BOLD}Test 45: detached HEAD${RESET}"
+detach_repo=$(mktemp -d)
+git -C "$detach_repo" init -q
+git -C "$detach_repo" commit --allow-empty -m "root" -q
+git -C "$detach_repo" commit --allow-empty -m "second" -q
+git -C "$detach_repo" checkout --detach HEAD -q
+echo "detached content" > "$detach_repo/det.txt"
+det_sha=$(cd "$detach_repo" && "$SNAPSHOT" -m "detached snap")
+det_status=$?
+assert_eq "snapshot on detached HEAD exits zero" "0" "$det_status"
+det_content=$(git -C "$detach_repo" show "$det_sha:det.txt")
+assert_eq "detached snapshot has file" "detached content" "$det_content"
+rm -rf "$detach_repo"
+echo
+
+# === Test 46: outside git repo ===
+echo -e "${BOLD}Test 46: outside git repo${RESET}"
+nogit_dir=$(mktemp -d)
+nogit_output=$(cd "$nogit_dir" && "$SNAPSHOT" 2>&1)
+nogit_status=$?
+assert_eq "outside git repo exits non-zero" "1" "$nogit_status"
+assert_contains "outside git repo prints friendly error" "not a git repository" "$nogit_output"
+rm -rf "$nogit_dir"
+echo
+
+# === Test 47: bare repository ===
+echo -e "${BOLD}Test 47: bare repository${RESET}"
+bare_dir=$(mktemp -d)/bare.git
+git init --bare -q "$bare_dir"
+bare_output=$(cd "$bare_dir" && "$SNAPSHOT" 2>&1)
+bare_status=$?
+assert_eq "bare repo exits non-zero" "1" "$bare_status"
+assert_contains "bare repo prints friendly error" "not a git repository" "$bare_output"
+rm -rf "$bare_dir"
+echo
+
+# === Test 48: combined -m and -i flags ===
+echo -e "${BOLD}Test 48: combined -m and -i${RESET}"
+git add -A && git commit -q -m "checkpoint 13"
+echo "*.tmp" >> .gitignore
+echo "combo ignored" > combo.tmp
+echo "combo tracked" > combo.txt
+sha=$("$SNAPSHOT" -m "combo test" -i)
+combo_status=$?
+assert_eq "combined flags exit zero" "0" "$combo_status"
+combo_msg=$(git log -1 --format='%s' "$sha")
+assert_eq "combined flags: message correct" "combo test" "$combo_msg"
+combo_ignored=$(git ls-tree --name-only "$sha" -- combo.tmp)
+assert_eq "combined flags: ignored file included" "combo.tmp" "$combo_ignored"
+# Also test -i before -m
+sha2=$("$SNAPSHOT" -i -m "combo reverse")
+combo2_msg=$(git log -1 --format='%s' "$sha2")
+assert_eq "reverse flag order: message correct" "combo reverse" "$combo2_msg"
+combo2_ignored=$(git ls-tree --name-only "$sha2" -- combo.tmp)
+assert_eq "reverse flag order: ignored file included" "combo.tmp" "$combo2_ignored"
+echo
+
+# === Test 49: temp file cleanup on mid-operation failure ===
+echo -e "${BOLD}Test 49: temp file cleanup on failure${RESET}"
+cleanup2_repo=$(mktemp -d)
+git -C "$cleanup2_repo" init -q
+git -C "$cleanup2_repo" commit --allow-empty -m "root" -q
+echo "test" > "$cleanup2_repo/file.txt"
+# Make the index unreadable to force cp failure after mktemp
+chmod 000 "$cleanup2_repo/.git/index"
+cleanup2_output=$(cd "$cleanup2_repo" && "$SNAPSHOT" 2>&1) || true
+chmod 644 "$cleanup2_repo/.git/index"
+assert_contains "failure error is clean" "error:" "$cleanup2_output"
+assert_contains "failure error mentions copy" "failed to copy index" "$cleanup2_output"
+# Should NOT mention "unbound variable"
+if echo "$cleanup2_output" | grep -q "unbound variable"; then
+    echo -e "  ${RED}✗${RESET} no unbound variable error" >&2
+    ((fail++))
+else
+    echo -e "  ${GREEN}✓${RESET} no unbound variable error" >&2
+    ((pass++))
+fi
+rm -rf "$cleanup2_repo"
+echo
+
+# === Test 50: show --stat is default, not forced with user flags ===
+echo -e "${BOLD}Test 50: show stat vs user format flags${RESET}"
+git add -A && git commit -q -m "checkpoint 14"
+echo "stat-test" > stattest.txt
+"$SNAPSHOT" -m "stat test" >/dev/null
+# Default should include stat format
+show_default=$("$SNAPSHOT" show)
+assert_contains "show default has stat (|)" " | " "$show_default"
+# With --name-only, should NOT have stat
+show_no=$("$SNAPSHOT" show --name-only)
+if echo "$show_no" | grep -q ' | '; then
+    echo -e "  ${RED}✗${RESET} --name-only suppresses stat (no forced --stat)" >&2
+    ((fail++))
+else
+    echo -e "  ${GREEN}✓${RESET} --name-only suppresses stat (no forced --stat)" >&2
+    ((pass++))
+fi
+echo
+
 # --- results ---
 echo -e "${BOLD}Results: ${GREEN}$pass passed${RESET}, ${RED}$fail failed${RESET}"
 rm -rf "$dir"
