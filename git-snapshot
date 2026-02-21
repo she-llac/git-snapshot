@@ -121,6 +121,10 @@ cmd_drop() {
   local ref
   ref=$(resolve_snap "$1")
   git reflog delete "$ref"
+  # Remove the ref if no snapshots remain
+  if [[ -z "$(git reflog show refs/snapshots 2>/dev/null)" ]]; then
+    git update-ref -d refs/snapshots || die "failed to remove refs/snapshots"
+  fi
 }
 
 cmd_restore() {

@@ -562,6 +562,8 @@ git -C "$drop_repo" commit --allow-empty -m "root" -q
 (cd "$drop_repo" && "$SNAPSHOT" drop 0)
 drop_list_output=$(cd "$drop_repo" && "$SNAPSHOT" list)
 assert_eq "list shows 'no snapshots' after dropping all" "no snapshots" "$drop_list_output"
+drop_ref_exists=$(git -C "$drop_repo" rev-parse --verify refs/snapshots 2>/dev/null && echo YES || echo NO)
+assert_eq "ref removed after dropping last snapshot" "NO" "$drop_ref_exists"
 rm -rf "$drop_repo"
 echo
 
