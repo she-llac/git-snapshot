@@ -56,7 +56,7 @@ snapshot_and_verify() {
     assert_eq "$label: worktree unchanged" "$worktree_before" "$worktree_after"
     assert_eq "$label: untracked unchanged" "$untracked_before" "$untracked_after"
 
-    echo "$sha"
+    _sv_sha=$sha
 }
 
 # --- setup ---
@@ -71,7 +71,8 @@ git commit --allow-empty -m "root" -q
 
 # === Test 1: clean repo ===
 echo -e "${BOLD}Test 1: clean repo${RESET}"
-sha=$(snapshot_and_verify "clean")
+snapshot_and_verify "clean"
+sha=$_sv_sha
 snap_tree=$(git rev-parse "$sha^{tree}")
 head_tree=$(git rev-parse "HEAD^{tree}")
 assert_eq "snapshot tree matches HEAD" "$head_tree" "$snap_tree"
@@ -80,7 +81,8 @@ echo
 # === Test 2: untracked file only ===
 echo -e "${BOLD}Test 2: untracked file${RESET}"
 echo "hello" > untracked.txt
-sha=$(snapshot_and_verify "untracked")
+snapshot_and_verify "untracked"
+sha=$_sv_sha
 assert_eq "snapshot has untracked.txt" "untracked.txt" "$(git ls-tree --name-only "$sha" -- untracked.txt)"
 echo
 
@@ -88,7 +90,8 @@ echo
 echo -e "${BOLD}Test 3: staged file${RESET}"
 echo "staged content" > staged.txt
 git add staged.txt
-sha=$(snapshot_and_verify "staged")
+snapshot_and_verify "staged"
+sha=$_sv_sha
 assert_eq "snapshot has staged.txt" "staged content" "$(git show "$sha:staged.txt")"
 assert_eq "staged.txt still in index" "A	staged.txt" "$(git diff --cached --name-status -- staged.txt)"
 echo
@@ -97,7 +100,8 @@ echo
 echo -e "${BOLD}Test 4: tracked modified unstaged${RESET}"
 git commit -q -m "add staged" -- staged.txt
 echo "modified content" > staged.txt
-sha=$(snapshot_and_verify "modified unstaged")
+snapshot_and_verify "modified unstaged"
+sha=$_sv_sha
 assert_eq "snapshot has modified content" "modified content" "$(git show "$sha:staged.txt")"
 echo
 
@@ -107,7 +111,8 @@ echo "new staged" > new.txt
 git add new.txt
 echo "also unstaged change" >> staged.txt
 echo "another untracked" > another.txt
-sha=$(snapshot_and_verify "mixed")
+snapshot_and_verify "mixed"
+sha=$_sv_sha
 assert_eq "snapshot has new.txt" "new staged" "$(git show "$sha:new.txt")"
 assert_eq "snapshot has another.txt" "another untracked" "$(git show "$sha:another.txt")"
 assert_eq "snapshot has untracked.txt" "hello" "$(git show "$sha:untracked.txt")"
@@ -122,7 +127,8 @@ echo
 echo -e "${BOLD}Test 6: ignored files excluded${RESET}"
 echo "*.log" > .gitignore
 echo "should be ignored" > debug.log
-sha=$(snapshot_and_verify "ignored excluded")
+snapshot_and_verify "ignored excluded"
+sha=$_sv_sha
 log_in_snap=$(git ls-tree --name-only "$sha" -- debug.log 2>/dev/null || echo "")
 assert_eq "ignored file not in snapshot" "" "$log_in_snap"
 gitignore_in_snap=$(git ls-tree --name-only "$sha" -- .gitignore)
@@ -131,7 +137,8 @@ echo
 
 # === Test 7: ignored files included with -i ===
 echo -e "${BOLD}Test 7: ignored files included with -i${RESET}"
-sha=$(snapshot_and_verify "ignored included" -i)
+snapshot_and_verify "ignored included" -i
+sha=$_sv_sha
 log_in_snap=$(git ls-tree --name-only "$sha" -- debug.log 2>/dev/null || echo "")
 assert_eq "ignored file in snapshot with -i" "debug.log" "$log_in_snap"
 echo
@@ -140,7 +147,8 @@ echo
 echo -e "${BOLD}Test 8: deleted tracked file${RESET}"
 git add -A && git commit -q -m "checkpoint"
 rm staged.txt
-sha=$(snapshot_and_verify "deleted")
+snapshot_and_verify "deleted"
+sha=$_sv_sha
 staged_in_snap=$(git ls-tree --name-only "$sha" -- staged.txt 2>/dev/null || echo "")
 assert_eq "deleted file absent from snapshot" "" "$staged_in_snap"
 echo
@@ -148,7 +156,8 @@ echo
 # === Test 9: staged deletion ===
 echo -e "${BOLD}Test 9: staged deletion${RESET}"
 git rm -q new.txt
-sha=$(snapshot_and_verify "staged deletion")
+snapshot_and_verify "staged deletion"
+sha=$_sv_sha
 new_in_snap=$(git ls-tree --name-only "$sha" -- new.txt 2>/dev/null || echo "")
 assert_eq "staged-deleted file absent from snapshot" "" "$new_in_snap"
 assert_eq "new.txt still staged for deletion" "D	new.txt" "$(git diff --cached --name-status -- new.txt)"
@@ -174,7 +183,8 @@ echo -e "${BOLD}Test 12: from subdirectory${RESET}"
 mkdir -p sub/deep
 echo "deep file" > sub/deep/file.txt
 cd sub/deep || exit
-sha=$(snapshot_and_verify "subdir")
+snapshot_and_verify "subdir"
+sha=$_sv_sha
 assert_eq "snapshot has deep file" "deep file" "$(git show "$sha:sub/deep/file.txt")"
 cd "$dir" || exit
 echo
@@ -390,7 +400,8 @@ echo
 echo -e "${BOLD}Test 30: special filenames${RESET}"
 echo "content spaces" > "file with spaces.txt"
 echo "content quote" > "file'quote.txt"
-sha=$(snapshot_and_verify "special filenames")
+snapshot_and_verify "special filenames"
+sha=$_sv_sha
 assert_eq "snapshot has file with spaces" "content spaces" "$(git show "$sha:file with spaces.txt")"
 assert_eq "snapshot has file with quote" "content quote" "$(git show "$sha:file'quote.txt")"
 echo
@@ -400,7 +411,8 @@ echo -e "${BOLD}Test 31: symlinks${RESET}"
 git add -A && git commit -q -m "checkpoint 5"
 echo "symlink target" > real.txt
 ln -s real.txt link.txt
-sha=$(snapshot_and_verify "symlinks")
+snapshot_and_verify "symlinks"
+sha=$_sv_sha
 link_mode=$(git ls-tree "$sha" -- link.txt | awk '{print $1}')
 assert_eq "symlink stored as symlink" "120000" "$link_mode"
 link_content=$(git show "$sha:link.txt")
@@ -412,7 +424,8 @@ echo -e "${BOLD}Test 32: binary file${RESET}"
 git add -A && git commit -q -m "checkpoint 6"
 dd if=/dev/urandom of=binary.bin bs=1024 count=64 2>/dev/null
 expected_md5=$(md5 -q binary.bin)
-sha=$(snapshot_and_verify "binary")
+snapshot_and_verify "binary"
+sha=$_sv_sha
 actual_md5=$(git show "$sha:binary.bin" | md5 -q)
 assert_eq "binary file roundtrips correctly" "$expected_md5" "$actual_md5"
 echo
@@ -811,7 +824,8 @@ git add -A && git commit -q -m "checkpoint 16"
 echo "rename content" > before-rename.txt
 git add before-rename.txt && git commit -q -m "add before-rename"
 git mv before-rename.txt after-rename.txt
-sha=$(snapshot_and_verify "rename")
+snapshot_and_verify "rename"
+sha=$_sv_sha
 rename_old=$(git ls-tree --name-only "$sha" -- before-rename.txt 2>/dev/null || echo "")
 rename_new=$(git ls-tree --name-only "$sha" -- after-rename.txt)
 assert_eq "old name absent from snapshot" "" "$rename_old"
@@ -827,7 +841,8 @@ echo "mode test" > modefile.sh
 git add modefile.sh && git commit -q -m "add modefile"
 mode_before=$(git ls-tree HEAD -- modefile.sh | awk '{print $1}')
 chmod +x modefile.sh
-sha=$(snapshot_and_verify "permissions")
+snapshot_and_verify "permissions"
+sha=$_sv_sha
 mode_snap=$(git ls-tree "$sha" -- modefile.sh | awk '{print $1}')
 mode_head=$(git ls-tree HEAD -- modefile.sh | awk '{print $1}')
 assert_eq "HEAD still has old mode" "$mode_before" "$mode_head"
@@ -873,12 +888,14 @@ echo -e "${BOLD}Test 63: file-to-directory type change${RESET}"
 git add -A && git commit -q -m "checkpoint 18"
 echo "I am a file" > thing
 git add thing && git commit -q -m "thing as file"
-sha_file=$(snapshot_and_verify "thing as file")
+snapshot_and_verify "thing as file"
+sha_file=$_sv_sha
 assert_eq "snapshot has thing as file" "100644" "$(git ls-tree "$sha_file" -- thing | awk '{print $1}')"
 rm thing
 mkdir thing
 echo "inside dir" > thing/inner.txt
-sha_dir=$(snapshot_and_verify "thing as dir")
+snapshot_and_verify "thing as dir"
+sha_dir=$_sv_sha
 assert_eq "snapshot has thing as dir" "040000" "$(git ls-tree "$sha_dir" -- thing | awk '{print $1}')"
 assert_eq "snapshot has inner file" "inside dir" "$(git show "$sha_dir:thing/inner.txt")"
 echo
